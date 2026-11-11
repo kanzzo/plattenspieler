@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plattenspieler</title>
+<link rel="icon" type="image/svg+xml" href="data/favicon.svg">
+<style>
+/* Plattenspieler: Der Tonarm schwenkt auf die Platte, erst dann beginnt der Song. Während des Songs wandert
+   der Arm zur Mitte, am Ende (oder bei Stopp) schwenkt er zurück. Beim Stopp verstummt die Musik sofort. */
+@font-face { font-family: 'Comic Relief'; font-weight: 400; font-display: swap;
+  src: url('data/fonts/comic-relief/comic-relief-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'M PLUS Rounded 1c'; font-weight: 400; font-display: swap;
+  src: url('data/fonts/m-plus-rounded-1c/m-plus-rounded-1c-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'M PLUS Rounded 1c'; font-weight: 500; font-display: swap;
+  src: url('data/fonts/m-plus-rounded-1c/m-plus-rounded-1c-latin-500-normal.woff2') format('woff2'); }
+@font-face { font-family: 'IBM Plex Mono'; font-weight: 400; font-display: swap;
+  src: url('data/fonts/ibm-plex-mono/ibm-plex-mono-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'IBM Plex Mono'; font-weight: 500; font-display: swap;
+  src: url('data/fonts/ibm-plex-mono/ibm-plex-mono-latin-500-normal.woff2') format('woff2'); }
+
+:root {
+  --font-comic: 'Comic Relief', 'Comic Sans MS', sans-serif;
+  --font-text:  'M PLUS Rounded 1c', 'Segoe UI', sans-serif;
+  --font-code:  'IBM Plex Mono', Consolas, monospace;
+  --card-bg: #FFF9E5;
+  --bg: var(--card-bg);
+  --window-shadow: 0 0 12px color-mix(in srgb, var(--card-bg), black 20%);
+  --text-primary: #333333;
+  --text-secondary: #73736D;
+  --text-emphasis: #333333;
+  --border: #E0E0E0;
+  --stroke: #0A0A0A;
+  --mix-target: black;
+  --emph-amount: 5%;
+  --focus-amount: 20%;
+  --field-inset: 21px;
+  --weight-text: 500; --weight-code: 500;
+}
+:root[data-theme="dark"] {
+  --bg: #121212;
+  --card-bg: #1E1E1E;
+  --text-primary: #B5B5B5;
+  --text-secondary: #A0A0A0;
+  --text-emphasis: #CBCBCB;
+  --border: #454545;
+  --stroke: #E6E6E2;
+  --mix-target: white;
+  --window-shadow: none;
+  --weight-text: 400; --weight-code: 400;
+}
+
+body {
+  margin: 0; padding: 24px 16px 56px;
+  background: var(--bg); color: var(--text-primary);
+  font-family: var(--font-text); font-size: 16px; line-height: 1.5; font-weight: var(--weight-text);
+}
+h1, h2 { font-family: var(--font-comic); color: var(--text-emphasis); margin: 0; }
+h1 { font-size: 26px; text-align: center; margin-bottom: 20px; }
+.stack { max-width: 520px; margin: 0 auto; display: grid; gap: 20px; }
+.window { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 20px; box-shadow: var(--window-shadow); }
+
+.btn-row { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
+button.btn {
+  font: inherit; font-size: 14px; padding: 8px 16px; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--card-bg); color: var(--text-secondary); cursor: pointer;
+}
+button.btn:hover:not(:disabled) { border-width: 2px; padding: 7px 15px; border-color: color-mix(in srgb, var(--border), var(--mix-target) var(--focus-amount)); }
+button.btn.btn-emphasized { background: color-mix(in srgb, var(--card-bg), var(--mix-target) var(--emph-amount)); color: var(--text-emphasis); }
+button.btn:disabled { pointer-events: none; }
+
+.theme-toggle {
+  position: fixed; top: 14px; right: 18px; width: 34px; height: 34px; padding: 0; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--card-bg); color: var(--text-primary); border: 1px solid var(--border); font-size: 16px; cursor: pointer;
+}
+
+.status { font-family: var(--font-code); font-weight: var(--weight-code); font-size: 13px; color: var(--text-secondary);
+  padding-left: var(--field-inset); margin-top: 10px; min-height: 18px; }
+#zeit { padding-left: 0; text-align: center; }
+
+/* ---------- Platte (wie im Downloader), Drehung hier per Skript statt per CSS-Animation ---------- */
+.vinyl { position: relative; width: 96px; height: 96px; margin: 0; border-radius: 50%; border: 2px solid var(--stroke); }
+.vinyl::after {
+  content: ""; position: absolute; top: 50%; left: 50%; width: 26px; height: 26px;
+  transform: translate(-50%, -50%); border-radius: 50%; border: 2px solid var(--stroke);
+  background: radial-gradient(circle, var(--stroke) 0 3px, var(--card-bg) 3.5px);
+}
+.grooves {
+  position: absolute; inset: 0; border-radius: 50%;
+  background: repeating-radial-gradient(circle at center, transparent 0 4px, var(--border) 4px 5px);
+}
+.grooves::before {
+  content: ""; position: absolute; inset: 0; border-radius: 50%;
+  --glint: color-mix(in srgb, var(--stroke) 35%, transparent);
+  background: conic-gradient(transparent 0 20deg, var(--glint) 40deg, transparent 60deg 200deg,
+                             var(--glint) 220deg, transparent 240deg 360deg);
+}
+
+/* ---------- Plattenspieler: Gehäuse und Arm als SVG (wie im Downloader), hier doppelt so groß ---------- */
+.platte { --cut: var(--card-bg); position: relative; width: 143.5px; aspect-ratio: 1190 / 950; margin: 0 auto; zoom: 2; }
+.platte .layer { position: absolute; inset: 0; width: 100%; height: 100%; }
+.platte .frame { fill: none; stroke: var(--stroke); stroke-width: 34; }
+.platte .solid { fill: var(--stroke); stroke: none; }
+.platte .cut { fill: var(--cut); stroke: none; }
+.platte .ring { fill: none; stroke: var(--cut); stroke-width: 12; }
+.platte .arm-outline { fill: none; stroke: var(--cut); stroke-width: 58; stroke-linecap: butt; stroke-linejoin: round; }
+.platte .arm { fill: none; stroke: var(--stroke); stroke-width: 34; stroke-linecap: butt; stroke-linejoin: round; }
+.platte .head { fill: var(--stroke); stroke: var(--cut); stroke-width: 24; stroke-linejoin: round; paint-order: stroke; }
+.platte .vinyl { position: absolute; left: 58.8px; top: 57.15px; transform: translate(-50%, -50%); }
+/* Die SVG-Ebenen lassen Klicks durch, nur der Regler rechts fängt sie (er öffnet das Geschwindigkeits-Fenster) */
+.platte .layer { pointer-events: none; }
+.platte .regler { pointer-events: all; cursor: pointer; outline: none; }
+.platte .regler .treffer { fill: transparent; }
+.platte .regler:hover .solid, .platte .regler:focus-visible .solid { fill: color-mix(in srgb, var(--stroke), var(--card-bg) 30%); }
+/* Innerer Kreis an der Arm-Achse: Start/Stopp */
+.platte .achse { pointer-events: all; cursor: pointer; outline: none; }
+.platte .achse:hover .solid, .platte .achse:focus-visible .solid { fill: color-mix(in srgb, var(--stroke), var(--card-bg) 30%); }
+
+/* ---------- Fortschrittsbalken (nur Palettenfarben), anklickbar zum Springen ---------- */
+.bar { width: 287px; max-width: 100%; height: 10px; margin: 24px auto 0; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; background: var(--card-bg); cursor: pointer; }
+.bar:hover { border-color: color-mix(in srgb, var(--border), var(--mix-target) var(--focus-amount)); }
+.bar > div { height: 100%; width: 0; background: var(--text-secondary); pointer-events: none; }
+
+/* ---------- Fenster Drehgeschwindigkeit (wie im Downloader) ---------- */
+.overlay {
+  position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center;
+  padding: 16px; background: color-mix(in srgb, var(--bg) 75%, transparent);
+}
+.overlay[hidden] { display: none; }
+.modal { width: 100%; max-width: 360px; }
+.modal .platte { zoom: 1.5; margin-bottom: 14px; }
+.modal .platte .regler, .modal .platte .achse { pointer-events: none; cursor: default; }
+.modal .grooves { animation: vinyl-spin var(--spin, 24s) linear infinite; }
+@keyframes vinyl-spin { to { transform: rotate(360deg); } }
+.modal input[type="range"] { width: 100%; accent-color: var(--text-secondary); margin: 6px 0 0; }
+.modal .status { padding-left: 0; text-align: center; }
+</style>
+</head>
+<body>
+<button class="theme-toggle" id="themeToggle" aria-label="Tag/Nacht-Modus umschalten">☾</button>
+
+<div class="stack">
+  <h1>Plattenspieler</h1>
+  <section class="window">
+    <div class="platte" role="img" aria-label="Plattenspieler mit beweglichem Tonarm">
+      <svg class="layer" viewBox="170 40 1190 950" aria-hidden="true">
+        <rect class="frame" x="209" y="80" width="1117" height="870" rx="75"/>
+        <g class="regler" role="button" tabindex="0" aria-label="Drehgeschwindigkeit einstellen">
+          <title>Drehgeschwindigkeit einstellen</title>
+          <rect class="treffer" x="1150" y="550" width="135" height="330"/>
+          <rect class="solid" x="1207" y="571" width="20" height="287"/>
+          <rect class="solid knopf" x="1169" y="654" width="96" height="55" rx="14"/>
+        </g>
+      </svg>
+      <div class="vinyl"><div class="grooves"></div></div>
+      <svg class="layer" viewBox="170 40 1190 950" aria-hidden="true">
+        <g class="tonarm">   <!-- dreht sich um den Drehpunkt 1148/247 -->
+          <path class="arm-outline" d="M1128 282 L1048.8 444 Q1000.6 542.6 906 613.5"/>
+          <path class="arm" d="M1128 282 L1048.8 444 Q1000.6 542.6 906 613.5"/>
+          <polygon class="head" points="812,645 893,585 927,637 850,692"/>
+        </g>
+        <circle class="solid" cx="1148" cy="247" r="100"/>
+        <circle class="ring" cx="1148" cy="247" r="63"/>
+        <g class="achse" role="button" tabindex="0" aria-label="Start oder Stopp">
+          <title>Start / Stopp</title>
+          <circle class="solid" cx="1148" cy="247" r="44"/>
+        </g>
+      </svg>
+    </div>
+
+    <div class="bar" id="bar" title="Klick springt an diese Stelle"><div id="barFill"></div></div>
+    <div class="status" id="zeit">0:00 / 0:00</div>
+    <div class="btn-row">
+      <button class="btn btn-emphasized" id="startBtn" type="button" disabled>Start</button>
+    </div>
+  </section>
+</div>
+
+<audio id="song" src="data/plattenspieler_song.mp3" preload="auto"></audio>
+
+<!-- Fenster: Drehgeschwindigkeit (Klick auf den Regler rechts). Klick daneben schließt und übernimmt den Wert. Rein optisch. -->
+<div class="overlay" id="spinOverlay" hidden>
+  <div class="window modal" role="dialog" aria-label="Drehgeschwindigkeit">
+    <h2>Drehgeschwindigkeit</h2>
+    <div id="previewHost"></div>
+    <input type="range" id="spinRange" min="20" max="60" step="2" value="24" aria-label="Sekunden pro Umdrehung">
+    <p class="status" id="spinValue"></p>
+  </div>
+</div>
+
+<script>
+/* Tag/Nacht wie im Downloader */
+const root = document.documentElement, themeBtn = document.getElementById('themeToggle');
+let dark = true;
+try { dark = !(window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches); } catch (e) {}
+function setTheme(d) { root.setAttribute('data-theme', d ? 'dark' : 'light'); themeBtn.textContent = d ? '☀' : '☾'; }
+setTheme(dark);
+themeBtn.addEventListener('click', () => { dark = !dark; setTheme(dark); });
+
+/* ---------- Einstellungen (Winkel in Grad, gemessen gegen die Arm-Lage im Logo) ---------- */
+const PIVOT = '1148 247';
+const ARM_RUHE = -32;       // neben der Platte (weiter außen stößt der Tonkopf an den Geschwindigkeits-Schieber)
+const ARM_AUSSEN = -16.5;   // äußeres Ende der Rillen
+const ARM_INNEN = 7;        // Ende des Lieds: eine Rille vor dem Etikett
+const SCHWENK_MS = 1500;    // Arm auf die Platte bzw. zurück
+const ANLAUF_MS = 1200;     // Platte läuft an
+const AUSLAUF_MS = 2500;    // Platte läuft aus
+let LIED_MS = 0;            // Länge des Songs, kommt aus der Audiodatei
+const SPIN_MIN = 20, SPIN_MAX = 60, SPIN_START = 24;   // Sekunden pro Umdrehung (rein optisch)
+const KNOPF_OBEN = 598.5, KNOPF_UNTEN = 830.5, KNOPF_LOGO = 681.5;   // Mitte des Schiebeknopfs (SVG-Einheiten)
+
+const platte = document.querySelector('.stack .platte');
+const armEl = platte.querySelector('.tonarm'), grooves = platte.querySelector('.grooves');
+const bar = document.getElementById('bar'), barFill = document.getElementById('barFill'), zeit = document.getElementById('zeit');
+const startBtn = document.getElementById('startBtn'), song = document.getElementById('song');
+
+let spinSek = SPIN_START;
+let armWinkel = ARM_RUHE, plattenWinkel = 0, tempo = 0;   // tempo: 0 = steht, 1 = volle Drehzahl
+let phase = 'ruhe';        // ruhe | einschwenken | spielt | zurueck | auslaufen
+let phaseStart = 0, phaseVon = 0, tempoVon = 0, gespielt = 0, schwenkZiel = ARM_AUSSEN;
+const glatt = x => x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2;   // sanft beschleunigen und abbremsen
+const fmt = ms => { const s = Math.floor(ms / 1000); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+const winkelFuer = ms => ARM_AUSSEN + (ARM_INNEN - ARM_AUSSEN) * (LIED_MS ? ms / LIED_MS : 0);
+
+function zeichneArm(el, w) { el.setAttribute('transform', 'rotate(' + w.toFixed(3) + ' ' + PIVOT + ')'); }
+/* Schiebeknopf: oben = schnell (20 s), unten = langsam (60 s) */
+function setzeKnopf(p, sek) {
+  const y = KNOPF_OBEN + (sek - SPIN_MIN) / (SPIN_MAX - SPIN_MIN) * (KNOPF_UNTEN - KNOPF_OBEN);
+  p.querySelector('.knopf').setAttribute('transform', 'translate(0 ' + (y - KNOPF_LOGO).toFixed(1) + ')');
+}
+function zeigeFortschritt() {
+  barFill.style.width = (LIED_MS ? gespielt / LIED_MS * 100 : 0) + '%';
+  zeit.textContent = fmt(gespielt) + ' / ' + fmt(LIED_MS);
+}
+function setPhase(p, jetzt) {
+  phase = p; phaseStart = jetzt;
+  phaseVon = (p === 'einschwenken' || p === 'zurueck') ? armWinkel : tempo;
+  tempoVon = tempo;
+}
+function laeuft() { return phase === 'einschwenken' || phase === 'spielt'; }
+/* Eine Taste: "Start", wenn nichts läuft, "Stopp", sobald der Arm schwenkt oder Musik spielt. Ohne geladenen Song gesperrt. */
+function knoepfe() {
+  startBtn.disabled = !LIED_MS;
+  startBtn.textContent = laeuft() ? 'Stopp' : 'Start';
+}
+/* Song ab einer Stelle starten: Die Musik ist sofort still, der Arm schwenkt von dort, wo er gerade ist, an die passende
+   Stelle. Erst wenn die Nadel aufliegt, beginnt der Song (siehe Schritt "einschwenken"). */
+function starteAb(ms) {
+  if (!LIED_MS) return;
+  song.pause();
+  gespielt = ms; schwenkZiel = winkelFuer(ms); zeigeFortschritt();
+  setPhase('einschwenken', performance.now()); knoepfe();
+}
+/* Stopp: Nadel hebt ab, Musik verstummt sofort, der Arm schwenkt zurück */
+function stoppe() {
+  song.pause();
+  setPhase('zurueck', performance.now()); knoepfe();
+}
+function umschalten() { if (laeuft()) stoppe(); else starteAb(0); }
+
+let letzte = performance.now();
+function schritt(jetzt) {
+  const dt = jetzt - letzte; letzte = jetzt;
+  const t = jetzt - phaseStart;
+  if (phase === 'einschwenken') {
+    /* Arm schwenkt auf die Platte, die Platte läuft gleichzeitig an. Liegt die Nadel auf, startet der Song. */
+    armWinkel = phaseVon + (schwenkZiel - phaseVon) * glatt(Math.min(1, t / SCHWENK_MS));
+    tempo = tempoVon + (1 - tempoVon) * glatt(Math.min(1, t / ANLAUF_MS));
+    if (t >= SCHWENK_MS) {
+      armWinkel = schwenkZiel; tempo = 1; setPhase('spielt', jetzt);
+      song.currentTime = gespielt / 1000;
+      const versuch = song.play();
+      if (versuch && versuch.catch) versuch.catch(() => { stoppe(); });   // Browser lässt die Wiedergabe nicht zu
+    }
+  } else if (phase === 'spielt') {
+    gespielt = Math.min(LIED_MS, song.currentTime * 1000);
+    armWinkel = winkelFuer(gespielt);
+    zeigeFortschritt();
+    if (song.ended || gespielt >= LIED_MS) { setPhase('zurueck', jetzt); knoepfe(); }
+  } else if (phase === 'zurueck') {
+    armWinkel = phaseVon + (ARM_RUHE - phaseVon) * glatt(Math.min(1, t / SCHWENK_MS));
+    if (t >= SCHWENK_MS) { armWinkel = ARM_RUHE; setPhase('auslaufen', jetzt); }
+  } else if (phase === 'auslaufen') {
+    tempo = phaseVon * (1 - glatt(Math.min(1, t / AUSLAUF_MS)));
+    if (t >= AUSLAUF_MS) { tempo = 0; phase = 'ruhe'; gespielt = 0; song.currentTime = 0; zeigeFortschritt(); knoepfe(); }
+  }
+  plattenWinkel = (plattenWinkel + tempo * 360 / (spinSek * 1000) * dt) % 360;
+  grooves.style.transform = 'rotate(' + plattenWinkel.toFixed(2) + 'deg)';
+  zeichneArm(armEl, armWinkel);
+  requestAnimationFrame(schritt);
+}
+
+startBtn.addEventListener('click', umschalten);
+
+/* Länge kommt vom echten Song; erst danach ist die Taste frei */
+function songGeladen() {
+  if (song.duration && isFinite(song.duration)) { LIED_MS = song.duration * 1000; zeigeFortschritt(); knoepfe(); }
+}
+song.addEventListener('loadedmetadata', songGeladen);
+song.addEventListener('durationchange', songGeladen);
+songGeladen();
+
+/* Innerer Kreis an der Achse: Umschalter wie die Taste. Läuft der Song (oder schwenkt der Arm ein) = Stopp, sonst = Start von vorn */
+const achse = platte.querySelector('.achse');
+achse.addEventListener('click', umschalten);
+achse.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); umschalten(); } });
+
+/* Klick auf den Balken: Die Nadel hebt ab (Musik still), der Arm schwenkt an die angeklickte Stelle, dort spielt der Song weiter */
+bar.addEventListener('click', e => {
+  if (!LIED_MS) return;
+  const r = bar.getBoundingClientRect();
+  starteAb(Math.max(0, Math.min(0.995, (e.clientX - r.left) / r.width)) * LIED_MS);
+});
+
+/* ---------- Fenster Drehgeschwindigkeit: Klick auf den Regler rechts ---------- */
+const overlay = document.getElementById('spinOverlay');
+const range = document.getElementById('spinRange'), spinValue = document.getElementById('spinValue');
+const vorschau = platte.cloneNode(true);        // Kopie des Plattenspielers für das Fenster (Arm in Ruhe, Platte dreht)
+vorschau.removeAttribute('role'); vorschau.setAttribute('aria-hidden', 'true');
+vorschau.querySelector('.regler').removeAttribute('tabindex');
+vorschau.querySelector('.achse').removeAttribute('tabindex');
+document.getElementById('previewHost').appendChild(vorschau);
+zeichneArm(vorschau.querySelector('.tonarm'), ARM_RUHE);
+vorschau.querySelector('.grooves').style.transform = '';
+function zeigeVorschau() {
+  const sek = Number(range.value) || SPIN_START;
+  vorschau.querySelector('.vinyl').style.setProperty('--spin', sek + 's');
+  setzeKnopf(vorschau, sek);
+  spinValue.textContent = sek + ' s pro Umdrehung';
+}
+function oeffneSpin() { range.value = spinSek; zeigeVorschau(); overlay.hidden = false; range.focus(); }
+function schliesseSpin() {
+  spinSek = Number(range.value) || SPIN_START;
+  setzeKnopf(platte, spinSek);
+  overlay.hidden = true;
+}
+const regler = platte.querySelector('.regler');
+regler.addEventListener('click', oeffneSpin);
+regler.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); oeffneSpin(); } });
+range.addEventListener('input', zeigeVorschau);
+overlay.addEventListener('click', e => { if (e.target === overlay) schliesseSpin(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !overlay.hidden) schliesseSpin(); });
+
+setzeKnopf(platte, spinSek); zeichneArm(armEl, armWinkel); zeigeFortschritt(); knoepfe();
+requestAnimationFrame(schritt);
+</script>
+</body>
+</html>
